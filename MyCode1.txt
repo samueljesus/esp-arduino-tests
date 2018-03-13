@@ -1,0 +1,114 @@
+load('api_config.js');
+load('api_events.js');
+load('api_gpio.js');
+load('api_mqtt.js');
+load('api_net.js');
+load('api_sys.js');
+load('api_timer.js');
+
+let led = Cfg.get('pins.led');
+let button = Cfg.get('pins.button');
+let topic = '/devices/' + Cfg.get('device.id') + '/events';
+let ledStatus = false;
+print('LED GPIO:', led, 'button GPIO:', button);
+
+let getInfo = function() {
+  return JSON.stringify({
+    total_ram: Sys.total_ram(),
+    free_ram: Sys.free_ram()
+  });
+};
+
+
+// Blink built-in LED every second
+GPIO.set_mode(led, GPIO.MODE_OUTPUT);
+Timer.set(1000 /* 1 sec */, Timer.REPEAT, function() {
+  let value = GPIO.toggle(led);
+  //print(value ? 'Tick' : 'Tock', 'uptime:', Sys.uptime(), getInfo());
+  //print('LED GPIO:', led, 'button GPIO:', button, ' - ', button2, ' - ', button3);
+  //let message = getInfo();
+  //MQTT.pub(topic, message, 1);
+}, null);
+
+
+// Blink built-in LED every second
+GPIO.set_mode(13, GPIO.MODE_OUTPUT);
+//Timer.set(1000 /* 1 sec */, Timer.REPEAT, function() {
+//  let value = GPIO.toggle(13);
+  
+//}, null);
+
+
+// Publish to MQTT topic on a button press. Button is wired to GPIO pin 0
+//GPIO.set_button_handler(button, GPIO.PULL_UP, GPIO.INT_EDGE_NEG, 200, function() {
+//  let message = getInfo();
+//  let ok = MQTT.pub(topic, message, 1);
+//  print('Published:', ok, topic, '->', message);
+//}, null);
+
+
+// MY TEST
+GPIO.set_mode(4, GPIO.MODE_INPUT);
+GPIO.set_button_handler(4, GPIO.PULL_UP, GPIO.INT_EDGE_NEG, 200, function() {
+  ledStatus = !ledStatus;
+  GPIO.write(13,ledStatus);
+  print('button pressed - led status:',ledStatus);
+  let message = JSON.stringify({
+    event:'button',
+    led: 1,
+    status: ledStatus
+  });
+  let ok = MQTT.pub(topic, message, 1);
+    print('Published:', ok, topic, '->', message);
+}, null);
+
+
+MQTT.sub('/devices/esp8266_FECE90/ChangeLedStatus', function(conn, topic, msg) {
+  print('Topic:', topic, 'led status:', msg);
+  if(msg === "True"){
+    ledStatus = true;
+  }
+  else{
+    ledStatus = false;
+  }
+  GPIO.write(13,ledStatus);
+  
+}, null);
+
+
+MQTT.sub('/devices/esp8266_FECE90/events', function(conn, topic, msg) {
+  print('PING CARALHO');
+  let temp = JSON.parse(msg);
+  print(temp);
+  if(temp.event === 'ping'){
+    let message = JSON.stringify({
+      event:'pingAnswer',
+      led: 1,
+      status: ledStatus
+    });
+    let test = '/devices/' + Cfg.get('device.id') + '/events';
+    let ok = MQTT.pub(test, message, 1);
+    print('ping:', ok, test, '->', message);
+  }
+}, null);
+
+
+
+
+
+
+
+// Monitor network connectivity.
+Event.addGroupHandler(Net.EVENT_GRP, function(ev, evdata, arg) {
+  let evs = '???';
+  if (ev === Net.STATUS_DISCONNECTED) {
+    evs = 'DISCONNECTED';
+  } else if (ev === Net.STATUS_CONNECTING) {
+    evs = 'CONNECTING';
+  } else if (ev === Net.STATUS_CONNECTED) {
+    evs = 'CONNECTED';
+  } else if (ev === Net.STATUS_GOT_IP) {
+    evs = 'GOT_IP';
+  }
+  print('== Net event:', ev, evs);
+}, null);
